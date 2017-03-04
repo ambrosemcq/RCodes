@@ -1,0 +1,308 @@
+#Creating a dataframe from my data for Registration by Community Center!
+```
+folder='data'
+RegistrationFile='Seattle_Parks_and_Recreation_Class_Registration_Data.csv'
+RegistrationCSV=file.path(folder,RegistrationFile)
+RegistrationData=read.csv(RegistrationCSV,1)
+RegistrationData
+```
+#Selecting only the columns that I want from the dataframe
+```
+varsToSelect=c(3,7,18,20,21,25,27,30,33,35,36,41,45)
+RegistrationData=RegistrationData[varsToSelect]
+head(RegistrationData)
+```
+#Replacing missing values with "NA," Since R Studio only recognizes NA as missing
+```
+RegistrationData[RegistrationData=='n/a']=NA # this is an actual change to IDXs
+head(RegistrationData,10)
+
+```
+#Creating Proportions within the Registration DataFrame so I can run chi-squared test later
+```
+totalMinsProp=data.frame(100*prop.table(table(RegistrationData$total_minutes)))
+totalMinsProp
+RegFeeProp=data.frame(100*prop.table(table(RegistrationData$FEE)))
+RegFeeProp
+CourseDaysProp=data.frame(100*prop.table(table(RegistrationData$CourseDays)))
+CourseDaysProp
+CourseSiteProp=data.frame(100*prop.table(table(RegistrationData$CourseSite)))
+CourseSiteProp
+BroSecTitleProp=data.frame(100*prop.table(table(RegistrationData$BrochureSectionTitle)))
+BroSecTitleProp
+
+```
+####
+#Getting a dataframe from my data for the Number of Visitors at each Center
+```
+PeopleCounter='Seattle_Parks_and_Recreation_Community_Center_People_Counter_Data.csv'
+CounterCSV=file.path(folder,PeopleCounter)
+CounterData=read.csv(CounterCSV,1)
+head(CounterData,10)
+names(CounterData)
+CounterData$ï..Facility.Name <- gsub("CC","Community Center", CounterData$ï..Facility.Name)
+head(CounterData,10)
+
+```
+####
+#Separating Fee Column by Cost. Previously, it had both string and numeric values in each cell
+```
+library(stringi) # new library
+pattern='\\d+'
+nothing=''
+getNumber=function(aCell){
+  library(stringi)
+  pattern = "\\d+"
+  number=stri_extract_first_regex(aCell,pattern)
+  return(number)
+}
+getNumber(RegistrationData$FEE)
+head(RegistrationData,10)
+head(RegistrationData$FEE,10)
+RegistrationData[,36]=lapply(RegistrationData[36],getNumber)
+head(RegistrationData$FEE,10)
+summary(RegistrationData)
+```
+#Testing to see if my new column is able to be used for calculation!
+```
+RegistrationData$FEE<-as.numeric(RegistrationData$FEE) 
+head(RegistrationData$max_registrants,10)
+
+```
+####
+#Getting a shapefile for Seattle Neighborhoods
+```
+library(maptools)
+folder='data'
+borderFile='seattleBorder.shp'
+boroughsFile='Neighborhoods.shp'
+```
+#Getting a shapefile for Seattle Community Center Locations
+```
+communitiesFile='geo_export_d5cbabfe-fca8-498d-a159-0fc505ec54bf.shp'
+borderSHP=file.path(folder,borderFile) 
+boroughSHP=file.path(folder,boroughsFile) 
+communitySHP=file.path(folder,communitiesFile) 
+borders=readShapeSpatial(borderSHP) 
+boroughs =readShapeSpatial(boroughSHP) 
+centers=readShapePoints(communitySHP)
+pointColor="darkred"
+pointSymbol="*"
+expand=2
+plot(boroughs,lwd=0.5,border='green')
+plot(centers, pch = pointSymbol,col =pointColor,cex=expand,add=T)
+plot(borders,lwd=2,col=NA,add=T)
+
+
+```
+#Trimming the geographic landscape to hug tighter to where our Community Centers are
+```
+borders=readShapeSpatial(borderSHP,proj4string = CRS("+init=epsg:4326")) 
+boroughs =readShapeSpatial(boroughSHP,proj4string = CRS("+init=epsg:4326")) 
+centers=readShapePoints(communitySHP,proj4string = CRS("+init=epsg:4326")) 
+
+pointColor="darkblue"
+pointSymbol="*"
+expand=2
+plot(boroughs,lwd=0.5,border='green')
+plot(centers, pch = pointSymbol,col =pointColor,cex=expand,add=T)
+plot(borders,lwd=2,col=NA,add=T)
+```
+
+####
+#Attempt at changing the unit of analysis to Community Center
+```
+colsToAggregate=list(RegFeeAverages=RegistrationData[,11])
+RegnewUnitOfAnalysis=list(CommunityCenter=RegistrationData[,9])
+
+RegIndexPerCC= aggregate(colsToAggregate,
+                          by=RegnewUnitOfAnalysis,
+                          mean,na.rm=T)
+```
+## see results:
+```
+RegIndexPerCC
+
+```
+##Same for People Counter
+```
+colsToAggregate2=list(CounterAverages=CounterData[,3:6])
+CounternewUnitOfAnalysis=list(CommunityCenter2=CounterData[,1])
+
+CounterIndexPerCC= aggregate(colsToAggregate2,
+                         by=CounternewUnitOfAnalysis,
+                         mean,na.rm=T)
+```
+## see results:
+```
+CounterIndexPerCC
+
+```
+#Attempt at Merging the Counter Data File with the Registration Data File
+```
+merge(CounterIndexPerCC, RegIndexPerCC, by.x='CommunityCenter2', by.y='CommunityCenter')
+mergedCCdata=merge(CounterIndexPerCC, RegIndexPerCC, by.x='CommunityCenter2', by.y='CommunityCenter')
+```
+
+
+#Attempt to Plot our Merged Data with the CC Shapefile
+```
+summary(centers)
+str(centers$name)
+str(mergedCCdata$CommunityCenter2)
+mergedCCdata$CommunityCenter2=toupper(mergedCCdata$CommunityCenter2)
+centers$name=toupper(as.character(centers$name))
+mergeShape=merge(centers,mergedCCdata,by.x='name',by.y='CommunityCenter2',all.x=T)
+mergeShape
+
+library(RColorBrewer)
+library(classInt)
+mergedCCdata@data
+```
+# Receive the following error for the code on the next line: "Error: trying to get slot "data" from an object (class "data.frame") that is not an S4 object"
+```
+varToPLot=mergeShape$RegFeeAverages
+numberOfClasses = 9
+colorForScale='Reds'
+title='Average Registration Fee by Community Center'
+
+colors <- brewer.pal(numberOfClasses, colorForScale)
+intervals <- classIntervals(varToPLot, numberOfClasses, style = "quantile",dataPrecision=2)
+colorPallette <- findColours(intervals, colors)
+plot(mergeShape, col = colorPallette,main=title,add=T)
+legend(0, 46, legend = names(attr(colorPallette, "table")), fill = attr(colorPallette, "palette"), cex = 1, bty = "n")
+mergeShape
+
+
+```
+#Central Measurement & Dispersion
+```
+table(mergedCCdata['RegFeeAverages'])
+distribution=table(mergedCCdata['RegFeeAverages'])
+distributionPercent=prop.table(distribution)
+1-max(distributionPercent)
+library(ggmap)
+```
+#Centrality
+```
+summary(mergedCCdata)
+```
+#Skewness
+```
+names(mergedCCdata)
+library(moments)
+data.frame(sk=unlist(lapply(mergedCCdata[,c(2:6)],skewness,na.rm = T)))
+```
+#Kurtosis
+```
+data.frame(kt=unlist(lapply(mergedCCdata[,c(2:6)],kurtosis,na.rm = T)))
+```
+
+
+###
+# Contingency Tables
+```
+library(DescTools)
+median(as.numeric(mergedCCdata$RegFeeAverages),na.rm = T) #finding median of CCs based on FeeAverage
+keepBrochure = c('Fitness; Health & Wellness','Childcare & Out-of-School Time','Academic Preparedness; Career & Cont. Ed')
+keepCourseSite = c('Van Asselt Community Center','Rainier Community Center','Queen Anne Community Center')
+BrochureUpdate=RegistrationData[RegistrationData$BrochureSectionTitle %in% keepBrochure,]
+CourseUpdate=RegistrationData[RegistrationData$CourseSite %in% keepCourseSite,]
+table(RegistrationData$ActivityTitle)
+table(RegistrationData$BrochureSectionTitle,RegistrationData$CourseSite)
+library(gmodels)
+
+```
+#Highest, Median, and Lowest Fee Averages by Community Center
+```
+CrossTable(CourseUpdate$BrochureSectionTitle,CourseUpdate$CourseSite,prop.t=F, prop.r=F, prop.c=F,prop.chisq=F)
+```
+
+#Checking for Correlation
+```
+CrossTable(CourseUpdate$BrochureSectionTitle,CourseUpdate$CourseSite,prop.t=F, prop.r=F, prop.c=F,prop.chisq=F,chisq=T)
+
+```
+##Better ...This shows the average fee based on Title of Program and Community Center Site
+```
+with(RegistrationData, tapply(FEE, list(BrochureSectionTitle=BrochureSectionTitle,CourseSite=CourseSite), mean) )
+```
+
+
+#This shows boxplot for Van Asselt & Queen Anne
+```
+VanAsselt = RegistrationData[RegistrationData$CourseSite=='Van Asselt Community Center',]
+p <- ggplot(VanAsselt, aes(CourseSite, FEE))
+p + geom_boxplot()
+QueenAnne = RegistrationData[RegistrationData$CourseSite=='Queen Anne Community Center',]
+p <- ggplot(QueenAnne, aes(CourseSite, FEE))
+p + geom_boxplot()
+```
+
+# Fitness Fees for the Community Centers with the highest, median, and lowest Fee Averages
+```
+HighandLowFitness = CourseUpdate[CourseUpdate$BrochureSectionTitle=='Fitness; Health & Wellness',]
+p <- ggplot(HighandLowFitness, aes(CourseSite, FEE))
+p + geom_boxplot()
+```
+
+#Childcare Graph Across CCs
+```
+ChildcareAcrossCC = RegistrationData[RegistrationData$BrochureSectionTitle=='Childcare & Out-of-School Time',]
+p <- ggplot(ChildcareAcrossCC, aes(CourseSite, FEE),las=3)
+p + geom_boxplot()
+```
+
+#Fitness Graph Across CCs
+```
+FitnessAcrossCC = RegistrationData[RegistrationData$BrochureSectionTitle=='Fitness; Health & Wellness',]
+p <- ggplot(FitnessAcrossCC, aes(CourseSite, FEE))
+p + geom_boxplot()
+```
+
+#Confidence Intervals
+```
+seMean = function(x) sd(x)/sqrt(length(x))
+
+```
+#Means by Groups
+```
+means=aggregate(list(mean=HighandLowFitness$FEE),
+                list(CourseSite=HighandLowFitness$CourseSite),mean)
+```
+#SE by Groups
+```
+sems=aggregate(list(seMean=HighandLowFitness$FEE),
+               list(CourseSite=HighandLowFitness$CourseSite),seMean)
+```
+#New Data Frame
+```
+dataCI=merge(means,sems)
+dataCI$lower=dataCI$mean-2*dataCI$seMean
+dataCI$upper=dataCI$mean+2*dataCI$seMean
+dataCI
+```
+#Can make a plot of this
+```
+meanPlot = ggplot(dataCI, aes(y=mean, x=CourseSite)) + geom_point()
+errorPlot = meanPlot + geom_errorbar(aes(ymin = lower, ymax = upper))
+errorPlot
+```
+#t-test for Fitness Programs by the 2 CCs
+```
+t.test(HighandLowFitness$FEE~HighandLowFitness$CourseSite,var.equal = T)
+```
+#Scatterplot Matrix
+```
+library(jsonlite) 
+library(car)
+plot(CourseSiteProp$Var1, CourseSiteProp$Freq, main="Scatterplot of Site & Frequency of Use")
+plot(BroSecTitleProp$Var1, BroSecTitleProp$Freq, main="Scatterplot of Program & Frequency of Use")
+plot(mergedCCdata$)
+```
+#BarChart
+```
+counts <- table(RegistrationData$CourseSite)
+barplot(sort(counts,decreasing=FALSE), main="Frequency of CC Use by Activity", 
+        xlab="Community Centers",las=3)
+```
